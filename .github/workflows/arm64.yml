@@ -33,7 +33,7 @@ jobs:
             --build-arg FRAPPE_PATH=https://github.com/frappe/frappe \
             --build-arg FRAPPE_BRANCH=v15.46.0 \
             --build-arg APPS_JSON_BASE64=${{ secrets.APPS_JSON_BASE64 }} \
-            --tag tachtasandang/erpnext:1.3.2 \
+            --tag tachtasandang/erpnext:1.4.2 \
             --file images/custom/Containerfile \
             --output type=image,push=true \
             .
