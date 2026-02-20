@@ -1,13 +1,12 @@
-name: Build Custom Frappe Image (Bake)
+name: Build ERPNext 16 (Oracle ARM)
 
 on:
   push:
     branches: [ main ]
     paths:
       - "development/app.json"
+      - "docker-bake.*"
       - "images/**"
-      - "docker-bake.hcl"
-      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 concurrency:
@@ -44,13 +43,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build with Bake (Multi-Arch)
+      - name: Build ERPNext ARM64
         run: |
-          docker buildx bake build \
-            --set *.platform=linux/amd64,linux/arm64 \
-            --set *.args.FRAPPE_VERSION=version-16 \
-            --set *.args.NODE_VERSION=20 \
-            --set *.args.APPS_JSON_BASE64=${APPS_JSON_BASE64} \
-            --set *.tags=${REGISTRY_USER}/frappe-custom:latest \
-            --set *.tags=${REGISTRY_USER}/frappe-custom:${SHORT_SHA} \
+          docker buildx bake \
+            -f docker-bake.hcl \
+            -f docker-bake.override.hcl \
+            erpnext \
+            --set erpnext.platform=linux/arm64 \
+            --set erpnext.args.FRAPPE_VERSION=version-16 \
+            --set erpnext.args.ERPNEXT_VERSION=version-16 \
+            --set erpnext.args.PYTHON_VERSION=3.14 \
+            --set erpnext.args.NODE_VERSION=24 \
+            --set erpnext.args.CYPRESS_INSTALL_BINARY=0 \
+            --set erpnext.args.APPS_JSON_BASE64=${APPS_JSON_BASE64} \
+            --set erpnext.tags=${REGISTRY_USER}/erpnext-custom:latest \
+            --set erpnext.tags=${REGISTRY_USER}/erpnext-custom:${SHORT_SHA} \
+            --set erpnext.cache-from=type=registry,ref=${REGISTRY_USER}/erpnext-custom:buildcache \
+            --set erpnext.cache-to=type=registry,ref=${REGISTRY_USER}/erpnext-custom:buildcache,mode=max \
             --push
