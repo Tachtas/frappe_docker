@@ -1,59 +1,56 @@
-name: Build Custom Frappe Image (Multi-Arch)
+name: Build Custom Frappe Image (Bake)
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+    paths:
+      - "development/app.json"
+      - "images/**"
+      - "docker-bake.hcl"
+      - ".github/workflows/build.yml"
   workflow_dispatch:
+
+concurrency:
+  group: build-frappe
+  cancel-in-progress: true
+
+env:
+  BUILDKIT_PROGRESS: plain
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Fix uppercase owner problem
-      - name: Convert owner to lowercase
+      - name: Prepare variables
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE_NAME=ghcr.io/$OWNER/frappe-custom" >> $GITHUB_ENV
+          echo "REGISTRY_USER=ghcr.io/$OWNER" >> $GITHUB_ENV
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          APPS_JSON_BASE64=$(base64 -w 0 development/app.json)
+          echo "APPS_JSON_BASE64=$APPS_JSON_BASE64" >> $GITHUB_ENV
 
-      # Enable ARM emulation
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Encode apps.json to base64
+      - name: Build with Bake (Multi-Arch)
         run: |
-          APPS_JSON_BASE64=$(base64 -w 0 development/app.json)
-          echo "APPS_JSON_BASE64=$APPS_JSON_BASE64" >> $GITHUB_ENV
-
-      - name: Build and Push Multi-Arch Image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: images/layered/Containerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.IMAGE_NAME }}:version-16
-            ${{ env.IMAGE_NAME }}:latest
-          build-args: |
-            FRAPPE_PATH=https://github.com/frappe/frappe
-            FRAPPE_BRANCH=version-16
-            APPS_JSON_BASE64=${{ env.APPS_JSON_BASE64 }}
+          docker buildx bake build \
+            --set *.platform=linux/amd64,linux/arm64 \
+            --set *.args.FRAPPE_VERSION=version-16 \
+            --set *.args.NODE_VERSION=20 \
+            --set *.args.APPS_JSON_BASE64=${APPS_JSON_BASE64} \
+            --set *.tags=${REGISTRY_USER}/frappe-custom:latest \
+            --set *.tags=${REGISTRY_USER}/frappe-custom:${SHORT_SHA} \
+            --push
