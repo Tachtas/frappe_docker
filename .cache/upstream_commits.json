@@ -1,0 +1,17 @@
+{
+  "frappe/frappe": "82d3ca94c494bb0efbd0e8917b2e4e6522496d4b",
+  "frappe/erpnext": "ca9f9de39ffa66a810aa8e790e6658f3fe1ffef5",
+  "frappe/hrms": "aa42d57833bc6eecf7c8c61633122edf410cea3d",
+  "frappe/drive": "676610409d22e7755d26c2117fcba54f87acdddd",
+  "frappe/print_designer": "fa16fba88adc55d85f29fdd8b183c29670863949",
+  "frappe/insights": "289ad32ea898f6222d7d4b20abeb569b8b32dca1",
+  "frappe/studio": "af8ea50e5badafdf3c250a982e4ab31db00d3b9e",
+  "frappe/builder": "d3475735e347b07657e827ff3df8ded7d430fe82",
+  "buildswithpaul/Frappe_Assistant_Core": "1dbfd677e5a89a4a92b823bef4097835433f11d9",
+  "BrainWise-DEV/POSNext": "17442eb88d0c121cc5696b0c93b9d0c28c69b6f9",
+  "jezlan/xcelform": "9676bb8b41ced8eb39edbe87f44bf066303ab739",
+  "agile-technica/erpnext-indonesia-localization": "29328327df35cc98ef79cb3fe20c1db25c94f816",
+  "The-Commit-Company/commit": "b3300ef9e570d848d431e0993777ab5b68c97744",
+  "The-Commit-Company/Raven": "51b006c988a85490cefc28816c644d23632288ee",
+  "The-Commit-Company/mint": "181ef93a4077d4146cd48dca06dd6fe61b4728cb"
+}
