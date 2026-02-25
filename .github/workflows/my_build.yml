@@ -1,13 +1,14 @@
-name: Build Custom Frappe Image (Ultra Optimized)
+name: Build Custom Frappe Image (ARM Nightly + Manual Full)
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - "development/app.json"
-      - "images/**"
-      - ".github/workflows/build.yml"
+  schedule:
+    - cron: "0 18 * * 1,3,5"   # 02:00 WIB (UTC+7)
   workflow_dispatch:
+    inputs:
+      build_all:
+        description: "Build amd64 + arm64?"
+        required: false
+        default: "false"
 
 concurrency:
   group: build-frappe
@@ -23,16 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Lowercase owner (Docker requirement)
       - name: Prepare image name
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "IMAGE_NAME=ghcr.io/$OWNER/frappe-custom" >> $GITHUB_ENV
           echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-      # Enable ARM emulation
       - uses: docker/setup-qemu-action@v3
-
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -41,24 +39,37 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Encode apps.json
       - name: Encode apps.json
         run: |
           APPS_JSON_BASE64=$(base64 -w 0 development/app.json)
           echo "APPS_JSON_BASE64=$APPS_JSON_BASE64" >> $GITHUB_ENV
 
-      # 🔥 Main Build
-      - name: Build & Push Multi-Arch
+      # Decide platform
+      - name: Decide platforms
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "PLATFORMS=linux/arm64" >> $GITHUB_ENV
+            echo "TAG_SUFFIX=arm64" >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.build_all }}" = "true" ]; then
+            echo "PLATFORMS=linux/amd64,linux/arm64" >> $GITHUB_ENV
+            echo "TAG_SUFFIX=multi" >> $GITHUB_ENV
+          else
+            echo "PLATFORMS=linux/arm64" >> $GITHUB_ENV
+            echo "TAG_SUFFIX=arm64" >> $GITHUB_ENV
+          fi
+
+      - name: Build & Push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: images/custom/Containerfile
           push: true
           no-cache: true
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.PLATFORMS }}
           tags: |
             ${{ env.IMAGE_NAME }}:version-16
             ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ env.TAG_SUFFIX }}
             ${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
           build-args: |
             FRAPPE_PATH=https://github.com/frappe/frappe
