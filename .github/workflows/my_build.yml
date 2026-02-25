@@ -1,38 +1,118 @@
-name: Build Custom Frappe Image (ARM Nightly + Manual Full)
+name: Smart Nightly ARM + Release + SemVer
 
 on:
   schedule:
-    - cron: "0 18 * * 1,3,5"   # 02:00 WIB (UTC+7)
+    - cron: "0 18 * * *"
   workflow_dispatch:
-    inputs:
-      build_all:
-        description: "Build amd64 + arm64?"
-        required: false
-        default: "false"
+  push:
+    tags:
+      - "v*"
 
 concurrency:
   group: build-frappe
   cancel-in-progress: true
 
 jobs:
-  build:
+  pipeline:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare image name
+      - name: Prepare vars
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "IMAGE_NAME=ghcr.io/$OWNER/frappe-custom" >> $GITHUB_ENV
-          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      # ===============================
+      # CHECK UPSTREAM + GROUP COMMITS
+      # ===============================
+      - name: Detect upstream changes
+        run: |
+          mkdir -p .cache
+          CACHE_FILE=.cache/upstream_commits.json
+          [ -f "$CACHE_FILE" ] || echo "{}" > $CACHE_FILE
+      
+          SHOULD_BUILD=false
+          NEW_COMMITS="{}"
+          CHANGELOG="## Changes\n\n"
+      
+          get_frappe_version () {
+            RAW=$(curl -s https://raw.githubusercontent.com/frappe/frappe/version-16/frappe/__init__.py)
+            echo "$RAW" | grep "__version__" | cut -d '"' -f2
+          }
+      
+          check_repo () {
+            REPO=$1
+            BRANCH=$2
+      
+            NEW_SHA=$(curl -s https://api.github.com/repos/$REPO/commits/$BRANCH | jq -r '.sha')
+            OLD_SHA=$(jq -r --arg repo "$REPO" '.[$repo] // empty' $CACHE_FILE)
+      
+            if [ "$NEW_SHA" != "$OLD_SHA" ]; then
+              SHOULD_BUILD=true
+              echo "Change detected in $REPO"
+      
+              if [ -n "$OLD_SHA" ]; then
+                COMMITS=$(curl -s https://api.github.com/repos/$REPO/compare/$OLD_SHA...$NEW_SHA | jq -r '.commits[].commit.message')
+              else
+                COMMITS=$(curl -s https://api.github.com/repos/$REPO/commits/$BRANCH | jq -r '.commit.message')
+              fi
+      
+              CHANGELOG="$CHANGELOG\n<details>\n<summary>$REPO</summary>\n\n"
+      
+              while read -r line; do
+                CHANGELOG="$CHANGELOG- $line\n"
+              done <<< "$COMMITS"
+      
+              CHANGELOG="$CHANGELOG\n</details>\n\n"
+            fi
+      
+            NEW_COMMITS=$(echo $NEW_COMMITS | jq --arg repo "$REPO" --arg sha "$NEW_SHA" '. + {($repo): $sha}')
+          }
+      
+          # Track frappe core
+          check_repo "frappe/frappe" "version-16"
+      
+          # Track apps
+          for row in $(jq -c '.[]' development/app.json); do
+            URL=$(echo $row | jq -r '.url')
+            BRANCH=$(echo $row | jq -r '.branch')
+            REPO=$(echo $URL | sed 's#https://github.com/##')
+            check_repo "$REPO" "$BRANCH"
+          done
+      
+          echo "$NEW_COMMITS" > $CACHE_FILE
+          echo "SHOULD_BUILD=$SHOULD_BUILD" >> $GITHUB_ENV
+          echo -e "$CHANGELOG" > RELEASE_NOTES.md
+      
+          if [ "$SHOULD_BUILD" = true ]; then
+            FRAPPE_VERSION=$(get_frappe_version)
+            echo "VERSION=$FRAPPE_VERSION" >> $GITHUB_ENV
+          fi
+      - name: Stop if no change
+        if: env.SHOULD_BUILD != 'true'
+        run: exit 0
+
+      - name: Commit cache + version
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add .cache/
+          git commit -m "Update upstream cache + version"
+          git push
+
+      # ===============================
+      # BUILD LOGIC
+      # ===============================
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -44,21 +124,15 @@ jobs:
           APPS_JSON_BASE64=$(base64 -w 0 development/app.json)
           echo "APPS_JSON_BASE64=$APPS_JSON_BASE64" >> $GITHUB_ENV
 
-      # Decide platform
-      - name: Decide platforms
+      - name: Determine platforms
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "PLATFORMS=linux/arm64" >> $GITHUB_ENV
-            echo "TAG_SUFFIX=arm64" >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.build_all }}" = "true" ]; then
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "PLATFORMS=linux/amd64,linux/arm64" >> $GITHUB_ENV
-            echo "TAG_SUFFIX=multi" >> $GITHUB_ENV
           else
             echo "PLATFORMS=linux/arm64" >> $GITHUB_ENV
-            echo "TAG_SUFFIX=arm64" >> $GITHUB_ENV
           fi
 
-      - name: Build & Push
+      - name: Build Image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -67,11 +141,19 @@ jobs:
           no-cache: true
           platforms: ${{ env.PLATFORMS }}
           tags: |
-            ${{ env.IMAGE_NAME }}:version-16
             ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ env.TAG_SUFFIX }}
-            ${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
-          build-args: |
-            FRAPPE_PATH=https://github.com/frappe/frappe
-            FRAPPE_BRANCH=version-16
-            APPS_JSON_BASE64=${{ env.APPS_JSON_BASE64 }}
+            ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.title=Frappe Custom Build
+            org.opencontainers.image.description=Custom Frappe v16 build with tracked upstream changes
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.source=${{ github.repository }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          body_path: RELEASE_NOTES.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
