@@ -35,11 +35,11 @@ jobs:
       # ==========================================
       - name: Download upstream cache artifact
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: upstream-cache
           path: .cache
-        continue-on-error: true
-
+      
       - name: Ensure cache file exists
         run: |
           mkdir -p .cache
