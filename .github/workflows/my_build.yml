@@ -37,8 +37,10 @@ jobs:
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: upstream-cache
+          pattern: upstream-cache
           path: .cache
+          merge-multiple: true
+          if-no-files-found: ignore
       
       - name: Ensure cache file exists
         run: |
@@ -56,7 +58,7 @@ jobs:
           CHANGELOG="## Changes\n\n"
 
           get_frappe_version () {
-            RAW=$(curl -s https://raw.githubusercontent.com/frappe/frappe/version-16/frappe/__init__.py)
+            RAW=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -s https://raw.githubusercontent.com/frappe/frappe/version-16/frappe/__init__.py)
             echo "$RAW" | grep "__version__" | cut -d '"' -f2
           }
 
@@ -64,7 +66,7 @@ jobs:
             REPO=$1
             BRANCH=$2
 
-            NEW_SHA=$(curl -s https://api.github.com/repos/$REPO/commits/$BRANCH | jq -r '.sha')
+            NEW_SHA=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -s https://api.github.com/repos/$REPO/commits/$BRANCH | jq -r '.sha')
             OLD_SHA=$(jq -r --arg repo "$REPO" '.[$repo] // empty' $CACHE_FILE)
 
             if [ "$NEW_SHA" != "$OLD_SHA" ]; then
@@ -72,9 +74,9 @@ jobs:
               echo "Change detected in $REPO"
 
               if [ -n "$OLD_SHA" ]; then
-                COMMITS=$(curl -s https://api.github.com/repos/$REPO/compare/$OLD_SHA...$NEW_SHA | jq -r '.commits[].commit.message')
+                COMMITS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -s https://api.github.com/repos/$REPO/compare/$OLD_SHA...$NEW_SHA | jq -r '.commits[].commit.message')
               else
-                COMMITS=$(curl -s https://api.github.com/repos/$REPO/commits/$BRANCH | jq -r '.commit.message')
+                COMMITS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -s https://api.github.com/repos/$REPO/commits/$BRANCH | jq -r '.commit.message')
               fi
 
               CHANGELOG="$CHANGELOG\n<details>\n<summary>$REPO</summary>\n\n"
