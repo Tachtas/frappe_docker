@@ -65,29 +65,91 @@ jobs:
           check_repo () {
             REPO=$1
             BRANCH=$2
-
-            NEW_SHA=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -s https://api.github.com/repos/$REPO/commits/$BRANCH | jq -r '.sha')
+          
+            NEW_SHA=$(curl -s \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              https://api.github.com/repos/$REPO/commits/$BRANCH | jq -r '.sha')
+          
             OLD_SHA=$(jq -r --arg repo "$REPO" '.[$repo] // empty' $CACHE_FILE)
-
+          
             if [ "$NEW_SHA" != "$OLD_SHA" ]; then
               SHOULD_BUILD=true
               echo "Change detected in $REPO"
-
+          
               if [ -n "$OLD_SHA" ]; then
-                COMMITS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -s https://api.github.com/repos/$REPO/compare/$OLD_SHA...$NEW_SHA | jq -r '.commits[].commit.message')
+                COMMITS=$(curl -s \
+                  -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                  https://api.github.com/repos/$REPO/compare/$OLD_SHA...$NEW_SHA \
+                  | jq -r '.commits[].commit.message | split("\n")[0]')
               else
-                COMMITS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -s https://api.github.com/repos/$REPO/commits/$BRANCH | jq -r '.commit.message')
+                COMMITS=$(curl -s \
+                  -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                  https://api.github.com/repos/$REPO/commits/$BRANCH \
+                  | jq -r '.commit.message | split("\n")[0]')
               fi
-
-              CHANGELOG="$CHANGELOG\n<details>\n<summary>$REPO</summary>\n\n"
-
+          
+              FEATURES=""
+              FIXES=""
+              REFACTOR=""
+              PERF=""
+              DEPS=""
+              OTHER=""
+          
               while read -r line; do
-                CHANGELOG="$CHANGELOG- $line\n"
+                case "$line" in
+                  feat:* )
+                    FEATURES="$FEATURES- $line\n"
+                    ;;
+                  fix:* )
+                    FIXES="$FIXES- $line\n"
+                    ;;
+                  refactor:* )
+                    REFACTOR="$REFACTOR- $line\n"
+                    ;;
+                  perf:* )
+                    PERF="$PERF- $line\n"
+                    ;;
+                  chore:*|deps:* )
+                    DEPS="$DEPS- $line\n"
+                    ;;
+                  Merge* )
+                    continue
+                    ;;
+                  * )
+                    OTHER="$OTHER- $line\n"
+                    ;;
+                esac
               done <<< "$COMMITS"
-
+          
+              CHANGELOG="$CHANGELOG\n<details>\n<summary>$REPO</summary>\n\n"
+          
+              if [ -n "$FEATURES" ]; then
+                CHANGELOG="$CHANGELOG\n### ✨ Features\n$FEATURES\n"
+              fi
+          
+              if [ -n "$FIXES" ]; then
+                CHANGELOG="$CHANGELOG\n### 🐛 Fixes\n$FIXES\n"
+              fi
+          
+              if [ -n "$REFACTOR" ]; then
+                CHANGELOG="$CHANGELOG\n### ♻️ Refactor\n$REFACTOR\n"
+              fi
+          
+              if [ -n "$PERF" ]; then
+                CHANGELOG="$CHANGELOG\n### ⚡ Performance\n$PERF\n"
+              fi
+          
+              if [ -n "$DEPS" ]; then
+                CHANGELOG="$CHANGELOG\n### 📦 Dependencies\n$DEPS\n"
+              fi
+          
+              if [ -n "$OTHER" ]; then
+                CHANGELOG="$CHANGELOG\n### 🔧 Other\n$OTHER\n"
+              fi
+          
               CHANGELOG="$CHANGELOG\n</details>\n\n"
             fi
-
+          
             NEW_COMMITS=$(echo $NEW_COMMITS | jq --arg repo "$REPO" --arg sha "$NEW_SHA" '. + {($repo): $sha}')
           }
 
