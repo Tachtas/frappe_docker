@@ -57,8 +57,11 @@ jobs:
           NEW_COMMITS="{}"
           CHANGELOG="## Changes\n\n"
 
-          get_frappe_version () {
-            RAW=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -s https://raw.githubusercontent.com/frappe/frappe/version-16/frappe/__init__.py)
+          get_app_version () {
+            RAW=$(curl -s \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              https://raw.githubusercontent.com/frappe/erpnext/version-16/erpnext/__init__.py)
+          
             echo "$RAW" | grep "__version__" | cut -d '"' -f2
           }
 
@@ -169,8 +172,8 @@ jobs:
           echo -e "$CHANGELOG" > RELEASE_NOTES.md
 
           if [ "$SHOULD_BUILD" = true ]; then
-            FRAPPE_VERSION=$(get_frappe_version)
-            echo "VERSION=$FRAPPE_VERSION" >> $GITHUB_ENV
+            APP_VERSION=$(get_app_version)
+            echo "VERSION=$APP_VERSION" >> $GITHUB_ENV
           fi
 
       # ==========================================
