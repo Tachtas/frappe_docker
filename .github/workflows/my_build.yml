@@ -61,6 +61,7 @@ jobs:
           CHANGELOG="## Changes\n\n"
 
           get_erpnext_version () {
+
             RAW=$(curl -s \
               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               https://raw.githubusercontent.com/frappe/erpnext/version-16/erpnext/__init__.py)
@@ -117,10 +118,13 @@ jobs:
           check_repo "frappe/frappe" "version-16"
 
           for row in $(jq -c '.[]' development/app.json); do
+
             URL=$(echo $row | jq -r '.url')
             BRANCH=$(echo $row | jq -r '.branch')
             REPO=$(echo $URL | sed 's#https://github.com/##')
-            check_repo "$REPO" "$BRANCH")
+
+            check_repo "$REPO" "$BRANCH"
+
           done
 
           echo "$NEW_COMMITS" > $CACHE_FILE
@@ -130,6 +134,7 @@ jobs:
           if [ "$SHOULD_BUILD" = true ]; then
 
             ERP_VERSION=$(get_erpnext_version)
+
             echo "BASE_VERSION=$ERP_VERSION" >> $GITHUB_ENV
 
           fi
@@ -164,8 +169,6 @@ jobs:
           else
             VERSION=$BASE
           fi
-
-          echo "Resolved version: $VERSION"
 
           DOCKER_VERSION=$(echo $VERSION | sed 's/+/-/')
 
