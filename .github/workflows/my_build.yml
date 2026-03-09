@@ -1,4 +1,4 @@
-name: Smart Nightly Multi-Arch + Release (Artifact Cache)
+name: Smart Nightly Multi-Arch + Release
 
 on:
   schedule:
@@ -31,9 +31,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
 
       # ==========================================
-      # DOWNLOAD PREVIOUS UPSTREAM CACHE (ARTIFACT)
+      # DOWNLOAD CACHE
       # ==========================================
-      - name: Download upstream cache artifact
+
+      - name: Download upstream cache
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
@@ -41,8 +42,8 @@ jobs:
           path: .cache
           merge-multiple: true
           if-no-files-found: ignore
-      
-      - name: Ensure cache file exists
+
+      - name: Ensure cache exists
         run: |
           mkdir -p .cache
           [ -f .cache/upstream_commits.json ] || echo "{}" > .cache/upstream_commits.json
@@ -50,121 +51,76 @@ jobs:
       # ==========================================
       # DETECT UPSTREAM CHANGES
       # ==========================================
+
       - name: Detect upstream changes
         run: |
+
           CACHE_FILE=.cache/upstream_commits.json
           SHOULD_BUILD=false
           NEW_COMMITS="{}"
           CHANGELOG="## Changes\n\n"
 
-          get_app_version () {
+          get_erpnext_version () {
             RAW=$(curl -s \
               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               https://raw.githubusercontent.com/frappe/erpnext/version-16/erpnext/__init__.py)
-          
+
             echo "$RAW" | grep "__version__" | cut -d '"' -f2
           }
 
           check_repo () {
+
             REPO=$1
             BRANCH=$2
-          
+
             NEW_SHA=$(curl -s \
               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               https://api.github.com/repos/$REPO/commits/$BRANCH | jq -r '.sha')
-          
+
             OLD_SHA=$(jq -r --arg repo "$REPO" '.[$repo] // empty' $CACHE_FILE)
-          
+
             if [ "$NEW_SHA" != "$OLD_SHA" ]; then
+
               SHOULD_BUILD=true
               echo "Change detected in $REPO"
-          
+
               if [ -n "$OLD_SHA" ]; then
+
                 COMMITS=$(curl -s \
                   -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
                   https://api.github.com/repos/$REPO/compare/$OLD_SHA...$NEW_SHA \
                   | jq -r '.commits[].commit.message | split("\n")[0]')
+
               else
+
                 COMMITS=$(curl -s \
                   -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
                   https://api.github.com/repos/$REPO/commits/$BRANCH \
                   | jq -r '.commit.message | split("\n")[0]')
+
               fi
-          
-              FEATURES=""
-              FIXES=""
-              REFACTOR=""
-              PERF=""
-              DEPS=""
-              OTHER=""
-          
-              while read -r line; do
-                case "$line" in
-                  feat:* )
-                    FEATURES="$FEATURES- $line\n"
-                    ;;
-                  fix:* )
-                    FIXES="$FIXES- $line\n"
-                    ;;
-                  refactor:* )
-                    REFACTOR="$REFACTOR- $line\n"
-                    ;;
-                  perf:* )
-                    PERF="$PERF- $line\n"
-                    ;;
-                  chore:*|deps:* )
-                    DEPS="$DEPS- $line\n"
-                    ;;
-                  Merge* )
-                    continue
-                    ;;
-                  * )
-                    OTHER="$OTHER- $line\n"
-                    ;;
-                esac
-              done <<< "$COMMITS"
-          
+
               CHANGELOG="$CHANGELOG\n<details>\n<summary>$REPO</summary>\n\n"
-          
-              if [ -n "$FEATURES" ]; then
-                CHANGELOG="$CHANGELOG\n### ✨ Features\n$FEATURES\n"
-              fi
-          
-              if [ -n "$FIXES" ]; then
-                CHANGELOG="$CHANGELOG\n### 🐛 Fixes\n$FIXES\n"
-              fi
-          
-              if [ -n "$REFACTOR" ]; then
-                CHANGELOG="$CHANGELOG\n### ♻️ Refactor\n$REFACTOR\n"
-              fi
-          
-              if [ -n "$PERF" ]; then
-                CHANGELOG="$CHANGELOG\n### ⚡ Performance\n$PERF\n"
-              fi
-          
-              if [ -n "$DEPS" ]; then
-                CHANGELOG="$CHANGELOG\n### 📦 Dependencies\n$DEPS\n"
-              fi
-          
-              if [ -n "$OTHER" ]; then
-                CHANGELOG="$CHANGELOG\n### 🔧 Other\n$OTHER\n"
-              fi
-          
+
+              while read -r line; do
+                CHANGELOG="$CHANGELOG- $line\n"
+              done <<< "$COMMITS"
+
               CHANGELOG="$CHANGELOG\n</details>\n\n"
+
             fi
-          
+
             NEW_COMMITS=$(echo $NEW_COMMITS | jq --arg repo "$REPO" --arg sha "$NEW_SHA" '. + {($repo): $sha}')
+
           }
 
-          # Track frappe core
           check_repo "frappe/frappe" "version-16"
 
-          # Track apps
           for row in $(jq -c '.[]' development/app.json); do
             URL=$(echo $row | jq -r '.url')
             BRANCH=$(echo $row | jq -r '.branch')
             REPO=$(echo $URL | sed 's#https://github.com/##')
-            check_repo "$REPO" "$BRANCH"
+            check_repo "$REPO" "$BRANCH")
           done
 
           echo "$NEW_COMMITS" > $CACHE_FILE
@@ -172,19 +128,10 @@ jobs:
           echo -e "$CHANGELOG" > RELEASE_NOTES.md
 
           if [ "$SHOULD_BUILD" = true ]; then
-            APP_VERSION=$(get_app_version)
-            echo "VERSION=$APP_VERSION" >> $GITHUB_ENV
-          fi
 
-      # ==========================================
-      # SKIP IF VERSION ALREADY EXISTS
-      # ==========================================
-      - name: Skip if version already released
-        if: env.SHOULD_BUILD == 'true'
-        run: |
-          if git ls-remote --tags origin | grep -q "refs/tags/v${VERSION}$"; then
-            echo "Version v${VERSION} already exists. Skipping."
-            echo "SHOULD_BUILD=false" >> $GITHUB_ENV
+            ERP_VERSION=$(get_erpnext_version)
+            echo "BASE_VERSION=$ERP_VERSION" >> $GITHUB_ENV
+
           fi
 
       - name: Stop if no change
@@ -192,10 +139,44 @@ jobs:
         run: exit 0
 
       # ==========================================
-      # UPLOAD UPDATED UPSTREAM CACHE
+      # RESOLVE VERSION
       # ==========================================
-      - name: Upload upstream cache artifact
-        if: env.SHOULD_BUILD == 'true'
+
+      - name: Resolve version
+        run: |
+
+          BASE=${BASE_VERSION}
+
+          TAGS=$(git ls-remote --tags origin | awk '{print $2}' | sed 's|refs/tags/v||')
+
+          if echo "$TAGS" | grep -q "^${BASE}$"; then
+
+            MATCH=$(echo "$TAGS" | grep "^${BASE}+build" || true)
+
+            if [ -z "$MATCH" ]; then
+              VERSION="${BASE}+build.1"
+            else
+              LAST=$(echo "$MATCH" | sed "s/${BASE}+build.//" | sort -n | tail -n1)
+              NEXT=$((LAST + 1))
+              VERSION="${BASE}+build.${NEXT}"
+            fi
+
+          else
+            VERSION=$BASE
+          fi
+
+          echo "Resolved version: $VERSION"
+
+          DOCKER_VERSION=$(echo $VERSION | sed 's/+/-/')
+
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "DOCKER_VERSION=$DOCKER_VERSION" >> $GITHUB_ENV
+
+      # ==========================================
+      # UPLOAD CACHE
+      # ==========================================
+
+      - name: Upload upstream cache
         uses: actions/upload-artifact@v4
         with:
           name: upstream-cache
@@ -203,29 +184,24 @@ jobs:
           retention-days: 30
 
       # ==========================================
-      # BUILD (MULTI ARCH WITH CACHE)
+      # BUILD IMAGE
       # ==========================================
-      - uses: docker/setup-qemu-action@v3
-        if: env.SHOULD_BUILD == 'true'
 
+      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-        if: env.SHOULD_BUILD == 'true'
 
       - uses: docker/login-action@v3
-        if: env.SHOULD_BUILD == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Encode apps.json
-        if: env.SHOULD_BUILD == 'true'
         run: |
           APPS_JSON_BASE64=$(base64 -w 0 development/app.json)
           echo "APPS_JSON_BASE64=$APPS_JSON_BASE64" >> $GITHUB_ENV
 
-      - name: Build and Push Multi-Arch (Cached)
-        if: env.SHOULD_BUILD == 'true'
+      - name: Build and Push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -234,14 +210,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: |
             ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+            ${{ env.IMAGE_NAME }}:${{ env.DOCKER_VERSION }}
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
-          labels: |
-            org.opencontainers.image.title=Frappe Custom Build
-            org.opencontainers.image.description=Custom Frappe v16 build with tracked upstream changes
-            org.opencontainers.image.version=${{ env.VERSION }}
-            org.opencontainers.image.source=${{ github.repository }}
           build-args: |
             FRAPPE_PATH=https://github.com/frappe/frappe
             FRAPPE_BRANCH=version-16
@@ -250,8 +221,8 @@ jobs:
       # ==========================================
       # CREATE RELEASE
       # ==========================================
+
       - name: Create Release
-        if: env.SHOULD_BUILD == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
@@ -260,6 +231,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cleanup release notes
+      - name: Cleanup
         if: always()
         run: rm -f RELEASE_NOTES.md
