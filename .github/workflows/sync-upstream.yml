@@ -1,0 +1,42 @@
+name: Sync / Upstream frappe_docker
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Setiap hari, 02:00 UTC. Ganti sesuai kebutuhan.
+    - cron: "0 2 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/frappe/frappe_docker.git
+
+      - name: Fetch upstream
+        run: git fetch upstream
+
+      - name: Merge upstream/main
+        run: git merge upstream/main --no-edit
+
+      - name: Push to origin
+        run: git push origin main
+
+      # Jika langkah merge gagal karena konflik, workflow ini akan
+      # berhenti (exit non-zero) dan tidak melakukan push apa pun.
+      # Selesaikan konflik secara manual di lokal, lalu push ulang.

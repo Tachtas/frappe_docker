@@ -1,0 +1,74 @@
+name: Build / Custom Frappe Image
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Setiap Senin, 03:00 UTC (~10:00 WIB). Ganti sesuai kebutuhan.
+    - cron: "0 3 * * 1"
+  push:
+    branches:
+      - main
+    paths:
+      - apps.json
+      - .github/workflows/build-custom-image.yml
+
+env:
+  REGISTRY: ghcr.io
+  FRAPPE_PATH: https://github.com/frappe/frappe
+  FRAPPE_BRANCH: version-16
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set lowercase image name (GHCR wajib lowercase)
+        id: image
+        run: |
+          echo "name=$(echo '${{ github.repository_owner }}/frappe-custom' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set build tag
+        id: vars
+        run: |
+          echo "tag=$(date -u +%Y%m%d)-${{ env.FRAPPE_BRANCH }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Jika salah satu app di apps.json ternyata private repo,
+      # buat secret PAT (misal APPS_JSON_TOKEN) dan sisipkan token itu
+      # ke dalam url masing-masing entry di apps.json sebelum build,
+      # atau gunakan step tambahan untuk inject token sebelum langkah ini.
+
+      - name: Build and push custom image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/layered/Containerfile
+          push: true
+          no-cache: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.vars.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:latest
+          build-args: |
+            FRAPPE_PATH=${{ env.FRAPPE_PATH }}
+            FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
+          secret-files: |
+            apps_json=./apps.json
