@@ -1,0 +1,58 @@
+[
+  {
+    "url": "https://github.com/frappe/erpnext",
+    "branch": "version-16"
+  },
+  {
+    "url": "https://github.com/frappe/hrms",
+    "branch": "version-16"
+  },
+  {
+    "url": "https://github.com/frappe/drive",
+    "branch": "main"
+  },
+  {
+    "url": "https://github.com/frappe/print_designer",
+    "branch": "develop"
+  },
+  {
+    "url": "https://github.com/frappe/insights",
+    "branch": "develop"
+  },
+  {
+    "url": "https://github.com/frappe/studio",
+    "branch": "develop"
+  },
+  {
+    "url": "https://github.com/frappe/builder",
+    "branch": "develop"
+  },
+  {
+    "url": "https://github.com/buildswithpaul/Frappe_Assistant_Core",
+    "branch": "main"
+  },
+  {
+    "url": "https://github.com/BrainWise-DEV/POSNext",
+    "branch": "develop"
+  },
+  {
+    "url": "https://github.com/jezlan/xcelform",
+    "branch": "main"
+  },
+  {
+    "url": "https://github.com/agile-technica/erpnext-indonesia-localization",
+    "branch": "release/v1.3.0"
+  },
+  {
+    "url": "https://github.com/The-Commit-Company/commit",
+    "branch": "develop"
+  },
+  {
+    "url": "https://github.com/The-Commit-Company/Raven",
+    "branch": "develop"
+  },
+  {
+    "url": "https://github.com/The-Commit-Company/mint",
+    "branch": "develop"
+  }
+]
