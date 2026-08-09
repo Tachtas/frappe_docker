@@ -9,7 +9,7 @@ ARG CACHE_BUST=""
 
 USER frappe
 
-ENV npm_config_dangerously_allow_all_builds=true
+ENV pnpm_config_dangerously_allow_all_builds=true
 
 RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1000 \
   : "${CACHE_BUST}" && \
