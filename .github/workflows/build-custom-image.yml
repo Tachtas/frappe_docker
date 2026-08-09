@@ -1,7 +1,13 @@
 name: Build / Custom Frappe Image
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "Push image ke GHCR? (matikan untuk dry-run/uji coba build saja)"
+        required: false
+        type: boolean
+        default: true
   schedule:
     # Setiap Senin, 03:00 UTC (~10:00 WIB). Ganti sesuai kebutuhan.
     - cron: "0 3 * * 1"
@@ -82,7 +88,7 @@ jobs:
         with:
           context: .
           file: images/custom-ci/Containerfile
-          push: true
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
           platforms: linux/${{ matrix.arch }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
@@ -98,6 +104,7 @@ jobs:
   manifest:
     name: Combine multi-arch manifest
     needs: build
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -128,3 +135,81 @@ jobs:
             --tag "$IMAGE:latest" \
             "$IMAGE:$TAG-amd64" \
             "$IMAGE:$TAG-arm64"
+
+  smoke-test:
+    name: Smoke test (fresh install)
+    needs: [build, manifest]
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MARIADB_ROOT_PASSWORD: "123"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+      redis:
+        image: redis:6.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+    steps:
+      - name: Set lowercase image name (GHCR wajib lowercase)
+        id: image
+        run: |
+          echo "name=$(echo '${{ github.repository_owner }}/frappe-custom' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set build tag
+        id: vars
+        run: |
+          echo "tag=$(date -u +%Y%m%d)-${{ env.FRAPPE_BRANCH }}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull freshly built image
+        run: docker pull ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.vars.outputs.tag }}-amd64
+
+      # Image production dibuild dengan --skip-redis-config-generation,
+      # jadi db_host/redis harus di-set manual sebelum bench new-site.
+      # Ini simulasi instalasi dari 0 (fresh install), bukan restore backup.
+      #
+      # Daftar --install-app diambil OTOMATIS dari apps.txt yang dibuat
+      # bench saat bench init (isinya app_name asli hasil clone, bukan
+      # nama repo GitHub -- ini sumber paling akurat, contoh: repo
+      # "POSNext" app_name aslinya "xpos"). "frappe" dikecualikan karena
+      # sudah default terinstall; "drive" dikecualikan sementara karena
+      # masih bermasalah dan belum stabil untuk di-install otomatis.
+      - name: Fresh install smoke test
+        run: |
+          docker run --rm --network host \
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.vars.outputs.tag }}-amd64 \
+            bash -c '
+              set -e
+              cd /home/frappe/frappe-bench
+              bench set-config -g db_host 127.0.0.1
+              bench set-config -g redis_cache redis://127.0.0.1:6379
+              bench set-config -g redis_queue redis://127.0.0.1:6379
+              bench set-config -g redis_socketio redis://127.0.0.1:6379
+              INSTALL_FLAGS=$(grep -vE "^(frappe|drive)$" apps.txt | sed "s/^/--install-app /" | tr "\n" " ")
+              echo "Installing apps: $INSTALL_FLAGS"
+              bench new-site test.local \
+                --db-root-password 123 \
+                --admin-password admin \
+                --mariadb-user-host-login-scope=% \
+                --no-mariadb-socket \
+                $INSTALL_FLAGS
+              bench --site test.local list-apps
+            '
