@@ -8,10 +8,6 @@
     "branch": "version-16"
   },
   {
-    "url": "https://github.com/frappe/drive",
-    "branch": "main"
-  },
-  {
     "url": "https://github.com/frappe/print_designer",
     "branch": "develop"
   },
@@ -32,7 +28,7 @@
     "branch": "main"
   },
   {
-    "url": "https://github.com/BrainWise-DEV/POSNext",
+    "url": "https://github.com/kodlyft/xpos",
     "branch": "develop"
   },
   {
@@ -41,7 +37,7 @@
   },
   {
     "url": "https://github.com/agile-technica/erpnext-indonesia-localization",
-    "branch": "release/v1.3.0"
+    "branch": "develop"
   },
   {
     "url": "https://github.com/The-Commit-Company/commit",
