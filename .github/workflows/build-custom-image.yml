@@ -71,7 +71,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: images/layered/Containerfile
+          file: images/custom-ci/Containerfile
           push: true
           platforms: linux/amd64
           cache-from: type=gha
